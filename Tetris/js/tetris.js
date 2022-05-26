@@ -1,5 +1,10 @@
+import BLOCKS from "./block.js";
+
 // DOM
-const playground = document.querySelector(".playground>ul");
+const playground = document.querySelector(".playground > ul");
+const gameText = document.querySelector(".game-text");
+const scoreDisplay = document.querySelector(".score");
+const restartButton = document.querySelector(".game-text > button");
 
 // Setting
 const GAME_ROWS = 20;
@@ -11,48 +16,23 @@ let duration = 500;
 let downInterval;
 let tempMovingItem; // movingItem을 실질적으로 사용하기 전에 잠깐 담아두는 용도
 
-const BLOCKS = {
-  tree: [
-    // 하나의 블럭의 4가지 모양 (상,하,좌,우를 보는 각각의 모양)
-    [
-      [2, 1],
-      [0, 1],
-      [1, 0],
-      [1, 1],
-    ],
-    [],
-    [],
-    [],
-  ],
-};
-
-// top,left값을 통해 좌표가 변경이 되도록
-
 const movingItem = {
   // block의 타입, 좌표 등의 정보
-  type: "tree", // 위에서 만든 tree의 형태를 가져옴
-  direction: 0, // 화살표(위) 방향키를 눌렀을 때 블럭의 방향을 돌리는 지표
-  top: 10, // 지표를 기준으로 어디까지 내려와야 되는지 표현
-  left: 3, // 좌우값을 알려주는 역할
+  type: "",
+  direction: 1, // 화살표(위) 방향키를 눌렀을 때 블럭의 방향을 돌리는 지표
+  top: 0, // 지표를 기준으로 어디까지 내려와야 되는지 표현
+  left: 0, // 좌우값을 알려주는 역할
 };
 
 init(); // init이 호출되면서 아래 함수들이 실행, 총 20개의 li를 제작하게 됨
 
 // Functions
 function init() {
-  /*
-    spread operator를 사용하여 movingItem의 값만 가져와서 넣는다.
-    (movingItem 자체를 가져오는게 아니라, 껍데기를 벗긴 안의 내용만 가져옴!)
-    tempMovingItem = movingItem; 라고 직접적으로 넣게 되면 
-    movingItem의 값이 바뀌면 tempMovingItem도 같이 바뀌기 때문에.
-    - 즉, movingItem이 변경되더라도 tempMovingItem의 값은 변경되지 않는다.
-    - tempMovingItem 내용을 변경해본 후 맞는지 안맞는지 확인한 후에 movingItem 값을 변경하려고 하는 것 
-  */
   tempMovingItem = { ...movingItem };
   for (let i = 0; i < GAME_ROWS; i++) {
     prependNewLine();
   }
-  renderBlocks();
+  generateNewBlock();
 }
 
 function prependNewLine() {
@@ -68,56 +48,159 @@ function prependNewLine() {
   playground.prepend(li);
 }
 
-function renderBlocks() {
-  /*
-        tempMovingItem.type;
-        tempMovingItem.direction;
-        tempMovingItem.top;
-        tempMovingItem.left;
-        - 이렇게 하나씩 접근하기 힘드니까 바로바로 변수처럼 접근할 수 있도록 
-    */
-
+function renderBlocks(moveType = "") {
   const { type, direction, top, left } = tempMovingItem;
-  //   console.log(type, direction, top, left);
   const movingBlocks = document.querySelectorAll(".moving");
   movingBlocks.forEach((moving) => {
-    moving.classList.remove(type, "moving");
-    console.log(moving);
+    moving.classList.remove(type, "moving"); // 블럭 모양을 바꾸면 이전 style을 제거
+    // console.log(moving);
   });
 
-  //   BLOCKS[type][direction];
-  //   console.log(BLOCKS[type][direction]);
-
-  BLOCKS[type][direction].forEach((block) => {
+  BLOCKS[type][direction].some((block) => {
     const x = block[0] + left; // row 안에 들어있는 li의 값 + left값 만큼 이동
     const y = block[1] + top; // row 값 + top값 만큼 이동
-    // console.log(playground);
-    // childNodes는 forEach같은 배열함수를 사용할 수 있는 형태로 변환시켜준다.
-    const target = playground.childNodes[y].childNodes[0].childNodes[x];
-    // console.log(target);
-    target.classList.add(type, "moving"); // tree를 class로 줌 -> css에서 색 넣어주기
+
+    // const target = playground.childNodes[y].childNodes[0].childNodes[x];
+    // 삼항연산자 -> 조건 ? 참일경우 : 거짓일 경우
+    const target = playground.childNodes[y]
+      ? playground.childNodes[y].childNodes[0].childNodes[x]
+      : null;
+    const isAvailable = checkEmpty(target);
+    if (isAvailable) {
+      target.classList.add(type, "moving");
+    } else {
+      tempMovingItem = { ...movingItem }; // 빈 공간이 있으면 좌표를 원상태로 옮겨놓고 renderBlocks 실행
+      if (moveType === "retry") {
+        clearInterval(downInterval);
+        showGameoverText();
+      }
+      setTimeout(() => {
+        renderBlocks("retry"); // 재귀함수는 에러가 날 수 있어서 setTimeout을 이용
+        if (moveType === "top") {
+          seizeBlock();
+        }
+      }, 0);
+      // renderBlocks();
+      return true; // forEach는 반복을 중간에 멈출 수 없어서 some을 쓰고 return true로 멈추기
+    }
+    // target.classList.add(type, "moving"); // type(tree)를 class로 줌 -> css에서 색 넣어주기
   });
+
+  movingItem.left = left;
+  movingItem.top = top;
+  movingItem.direction = direction;
+}
+
+function seizeBlock() {
+  const movingBlocks = document.querySelectorAll(".moving");
+  movingBlocks.forEach((moving) => {
+    moving.classList.remove("moving");
+    moving.classList.add("seized");
+  });
+  checkMatch();
+}
+
+// 한줄이 완성되면, 완성된 줄이 없어짐과 동시에 맨위에 새로운 한줄이 생성되는 것!!
+function checkMatch() {
+  const childNodes = playground.childNodes;
+  childNodes.forEach((child) => {
+    let matched = true;
+    child.children[0].childNodes.forEach((li) => {
+      if (!li.classList.contains("seized")) {
+        matched = false;
+      }
+    });
+    if (matched) {
+      child.remove();
+      prependNewLine();
+      score++;
+      scoreDisplay.innerText = score;
+    }
+  });
+  generateNewBlock();
+}
+
+// 새로운 블럭 생성하기
+function generateNewBlock() {
+  clearInterval(downInterval);
+  downInterval = setInterval(() => {
+    moveBlock("top", 1);
+  }, duration);
+
+  const blockArray = Object.entries(BLOCKS);
+  // 랜덤한 숫자 가져오기
+  // Math.floor로 감싸면 뒤의 소수점이 안보인다.
+  const randomIndex = Math.floor(Math.random() * blockArray.length);
+
+  movingItem.type = blockArray[randomIndex][0];
+  movingItem.top = 0;
+  movingItem.left = 3;
+  movingItem.direction = 0;
+  tempMovingItem = { ...movingItem };
+  renderBlocks();
+}
+
+function checkEmpty(target) {
+  if (!target || target.classList.contains("seized")) {
+    return false;
+  }
+  return true;
 }
 
 function moveBlock(moveType, amount) {
   tempMovingItem[moveType] += amount;
+  renderBlocks(moveType);
+}
+
+function changeDirection() {
+  // tempMovingItem.direction += 1;
+  // if (tempMovingItem.direction === 4) {
+  //   tempMovingItem.direction = 0;
+  // } -> 삼항연산자로 코드 깔끔하게
+
+  const direction = tempMovingItem.direction;
+  direction === 3
+    ? (tempMovingItem.direction = 0)
+    : (tempMovingItem.direction += 1);
   renderBlocks();
+}
+
+function dropBlock() {
+  clearInterval(downInterval);
+  downInterval = setInterval(() => {
+    moveBlock("top", 1);
+  }, 10);
+}
+
+function showGameoverText() {
+  gameText.style.display = "flex";
 }
 
 // Event Handling
 document.addEventListener("keydown", (e) => {
   switch (e.keyCode) {
     case 39:
-      moveBlock("left", 1);
+      moveBlock("left", 1); // 좌우 움직이기
       break;
     case 37:
       moveBlock("left", -1);
       break;
     case 40:
-      moveBlock("top", 1);
+      moveBlock("top", 1); // 아래로 움직이기
+      break;
+    case 38:
+      changeDirection();
+      break;
+    case 32:
+      dropBlock();
       break;
     default:
       break;
   }
-  //   console.log(e);
+});
+
+restartButton.addEventListener("click", () => {
+  playground.innerHTML = "";
+  gameText.style.display = "none";
+  init();
 });
